@@ -1,0 +1,24 @@
+services:
+  model-export-example:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${USER_ID:?}
+        GROUP_ID: ${GROUP_ID:?}
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
+      - $HOME:$HOME
+      - $HOME/anaconda # Exclude Anaconda folders from mapping for reproducibility
+      - $HOME/anaconda3
+      - $HOME/.local/lib/ # Map home folder but do not map Python packages and other binaries of the host machine
+      - $HOME/.local/bin/
+      - /mnt:/mnt
+    ports:
+      - "8888:8888" # Jypyter inside the container
+    working_dir: "$PWD"
+    restart: unless-stopped
+    user: ${USER_ID:?}:${GROUP_ID:?}
+    command: python3 -m jupyter lab --ip 0.0.0.0 --port 8888
+    shm_size: "2gb" # PyTorch shared memory
