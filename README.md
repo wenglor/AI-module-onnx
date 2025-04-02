@@ -5,6 +5,10 @@
 This repository contains a [Jupyter notebook](notebooks/model-export-example.ipynb) and utility scripts for training, quantizing and exporting a PyTorch model to
 a `.u3o` file, the format accepted by uniVision Module Image ONNX. It is a zip archive with an ONNX model file and a metadata in `YAML` format.
 
+*DISCLAIMER:* Note that all examples are provided to demonstrate the complete model creation workflow with a focus on the exported `.u3o` file.
+Training code and example images are placeholders given for purely for illustration, you will need to replace them with your actual training pipeline
+and dataset.
+
 ### Directory Structure
 
 ```shell
