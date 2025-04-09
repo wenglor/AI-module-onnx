@@ -23,11 +23,11 @@ requirements.txt                           # List of Python dependencies
 
 ## Prerequisites
 
-To follow the example, make sure you have the following installed:
+To follow the example have multiple options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host:
 
 - [Docker](https://docs.docker.com/engine/install/) (recommended)
-- [Python 3.8+](https://www.python.org/downloads/) (optional, for system Python setup)
-- [virtualenv](https://virtualenv.pypa.io/en/latest/installation.html) (optional, for venv setup)
+- [Python 3.8+](https://www.python.org/downloads/) (optional, for system Python setup without Docker)
+- [virtualenv](https://virtualenv.pypa.io/en/latest/installation.html) (optional, for venv setup without Docker)
 - [Jupyter Notebook](https://jupyter.org/install) (if running outside Docker)
 
 ## Installation and Setup
@@ -52,7 +52,7 @@ This is the simplest method to get started.
    docker compose down
    ```
 
-### Option 2: Using Virtual Environment (venv)
+### Option 2: Using Virtual Environment (venv) - when not using Docker
 
 1. Create and activate a virtual environment.
 
