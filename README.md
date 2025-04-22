@@ -23,16 +23,22 @@ requirements.txt                           # List of Python dependencies
 
 ## Prerequisites
 
-To follow the example have multiple options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host:
+To follow the example have two options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host
 
-- [Docker](https://docs.docker.com/engine/install/) (recommended)
+### Option 1: Installation using Docker (recommended)
+FYI we use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu.
+- [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)
+- [Docker](https://docs.docker.com/engine/install/)
+
+### Option 2: Installation without Docker
+
 - [Python 3.8+](https://www.python.org/downloads/) (optional, for system Python setup without Docker)
 - [virtualenv](https://virtualenv.pypa.io/en/latest/installation.html) (optional, for venv setup without Docker)
 - [Jupyter Notebook](https://jupyter.org/install) (if running outside Docker)
 
 ## Installation and Setup
 
-### Option 1: Using Docker Compose
+### Option 1: Using Docker Compose (recommended)
 
 This is the simplest method to get started.
 
@@ -108,7 +114,7 @@ This is the simplest method to get started.
 
 ## Troubleshooting
 
-### Option 1
+### Permission problems with Docker (Option 1)
 
 `PermissionError: [Errno 13] Permission denied: '/home/{USER}/.local/share'`
 
