@@ -26,7 +26,7 @@ requirements.txt                           # List of Python dependencies
 To follow the example have two options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host
 
 ### Option 1: Installation using Docker (recommended)
-FYI we use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu.
+FYI we use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu 22.04, newer versions should also work.
 - [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)
 - [Docker](https://docs.docker.com/engine/install/)
 
