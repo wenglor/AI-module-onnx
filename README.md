@@ -45,6 +45,15 @@ This is the simplest method to get started.
 1. Build and start the services.
 
    ```bash
+   docker compose up --build
+   ```
+
+   Internal user will default to the user with id 1000, which is the first user created on Ubuntu and will work in most cases.
+   Using the same user allows you to change the notebook file on the host from within the container.
+   If you have a different user, you can provide USER_ID and GROUP_ID parameters and the
+   container will run jupyter lab using the provided user and group.
+
+   ```bash
    export USER_ID=$(id -u)
    export GROUP_ID=$(id -g)
    docker compose up --build

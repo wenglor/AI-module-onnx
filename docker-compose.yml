@@ -3,22 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:?}
-        GROUP_ID: ${GROUP_ID:?}
     volumes:
-      - /etc/passwd:/etc/passwd:ro
-      - /etc/group:/etc/group:ro
-      - $HOME:$HOME
-      - $HOME/anaconda # Exclude Anaconda folders from mapping for reproducibility
-      - $HOME/anaconda3
-      - $HOME/.local/lib/ # Map home folder but do not map Python packages and other binaries of the host machine
-      - $HOME/.local/bin/
-      - /mnt:/mnt
+      - .:/app
     ports:
       - "8888:8888" # Jypyter inside the container
-    working_dir: "$PWD"
     restart: unless-stopped
-    user: ${USER_ID:?}:${GROUP_ID:?}
+    # Set the user and group ID to match the host, so that files created in the container are owned by the host user
+    # default to 1000:1000 if not set, this is the default for the first user on most Linux systems
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    environment:
+      - HOME=/app
+    working_dir: "/app"
     command: python3 -m jupyter lab --ip 0.0.0.0 --port 8888
     shm_size: "2gb" # PyTorch shared memory
