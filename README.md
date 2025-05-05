@@ -40,9 +40,18 @@ FYI we use docker engine within a WSL2 environment on Windows. We also tested th
 
 ### Option 1: Using Docker Compose (recommended)
 
-This is the simplest method to get started.
+This is the simplest method to get started. If you do not provide the USER_ID and GROUP_ID
 
 1. Build and start the services.
+
+   ```bash
+   docker compose up --build
+   ```
+
+   Internal user will default to the user with id 1000, which is the first user created on Ubuntu and will work in most cases.
+   Using the same user allows you to change the notebook file on the host from within the container.
+   If you have a different user, you can provide USER_ID and GROUP_ID parameters and the
+   container will run jupyter lab using the provided user and group.
 
    ```bash
    export USER_ID=$(id -u)

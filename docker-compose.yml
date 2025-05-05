@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./notebooks:/notebooks
+      - .:/app
     ports:
       - "8888:8888" # Jypyter inside the container
     restart: unless-stopped
@@ -12,7 +12,7 @@ services:
     # default to 1000:1000 if not set, this is the default for the first user on most Linux systems
     user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     environment:
-      - HOME=/notebooks
-    working_dir: "/notebooks"
+      - HOME=/app
+    working_dir: "/app"
     command: python3 -m jupyter lab --ip 0.0.0.0 --port 8888
     shm_size: "2gb" # PyTorch shared memory
