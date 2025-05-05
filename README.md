@@ -40,7 +40,7 @@ FYI we use docker engine within a WSL2 environment on Windows. We also tested th
 
 ### Option 1: Using Docker Compose (recommended)
 
-This is the simplest method to get started. If you do not provide the USER_ID and GROUP_ID
+This is the simplest method to get started.
 
 1. Build and start the services.
 
