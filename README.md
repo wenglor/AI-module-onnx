@@ -12,21 +12,28 @@ and dataset.
 ### Directory Structure
 
 ```shell
-/notebooks/
-    ├── model-export-example.ipynb         # End-to-end example notebook
-    ├── utils/                             # Folder containing utility scripts 
-    ├── images/                            # Folder containing example images for model training
-Dockerfile                                 # Docker configuration
-docker-compose.yml                         # Docker Compose configuration
-requirements.txt                           # List of Python dependencies
+├── data
+│   ├── images                             # Folder containing example images for model training
+│   └── model                              # Folder where resulting models will be stored
+├── notebooks
+│   ├── data
+│   ├── utils                              # Folder containing utility scripts
+│   └── model-export-example.ipynb         # End-to-end example notebook
+├── Dockerfile                             # Docker configuration
+├── docker-compose.yml                     # Docker Compose configuration
+└── requirements.txt                       # List of Python dependencies                
 ```
+
+(recreate using `tree -L 2 --dirsfirst`)
 
 ## Prerequisites
 
 To follow the example have two options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host
 
 ### Option 1: Installation using Docker (recommended)
+
 FYI we use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu 22.04, newer versions should also work.
+
 - [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)
 - [Docker](https://docs.docker.com/engine/install/)
 
