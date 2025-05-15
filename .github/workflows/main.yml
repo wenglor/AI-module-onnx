@@ -1,0 +1,54 @@
+name: Generate PDFs and ZIP
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  generate-artifacts:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Set up Python environment
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.x
+
+    # Install dependencies
+    - name: Install dependencies
+      run: |
+        pip install nbconvert pandoc pdfkit
+
+    # Convert README.md to PDF
+    - name: Convert README.md to PDF
+      run: |
+        pandoc README.md -o README.pdf
+
+    # Convert Jupyter Notebooks to PDFs
+    - name: Convert Jupyter Notebooks to PDFs
+      run: |
+        for notebook in *.ipynb; do
+          jupyter nbconvert --to pdf --output "${notebook%.ipynb}.pdf" "$notebook"
+        done
+
+    # Create ZIP file of the entire repository
+    - name: Create repository ZIP
+      run: |
+        zip -r model-export-example.zip .
+
+    # Upload artifacts
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: generated-files
+        path: |
+          README.pdf
+          *.pdf
+          model-export-example.zip
