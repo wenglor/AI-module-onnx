@@ -128,6 +128,7 @@ def export_classification_model(
     input_color_space: Union[InputColorSpace, str] = InputColorSpace.RGB,
     output_type: Union[OutputType, str] = OutputType.MULTI_CLASS_CLASSIFICATION,
     heatmap_feature_layer: Optional[str] = None,
+    class_thresholds: Optional[List[float]] = None,
 ):
     """
     Exports a classification model to a Univision format, along with metadata and an input example.
@@ -158,6 +159,9 @@ def export_classification_model(
             E.g., 'MULTI_CLASS_CLASSIFICATION'. Defaults to 'MULTI_CLASS_CLASSIFICATION'.
         heatmap_feature_layer (Optional[str]): Heatmap feature layer name of the model.
             Defaults to None.
+        class_thresholds: Optional[List[float]]: Threshold values of classes in case of 'MULTI_LABEL_CLASSIFICATION' model.
+            The range of allowable values is [0,1] and must be provided for all the output classes.
+            If omitted it will be used 0.5 for all the output classes.
 
     Returns:
         None: This function saves a zipped Univision model file at the specified path.
@@ -207,6 +211,23 @@ def export_classification_model(
             f"Input_example shape {input_example.shape} does not match color_space {dataset_color_mode}."
         )
 
+    if output_type == OutputType.MULTI_CLASS_CLASSIFICATION:
+        if class_thresholds is not None:
+            raise ValueError(
+                f"Multi Class output was selected but class threshold values were provided.")
+
+    if output_type == OutputType.MULTI_LABEL_CLASSIFICATION:
+        if class_thresholds is None:
+            class_thresholds = [0.5] * len(classes)
+        else:
+            if len(class_thresholds) != len(classes):
+                raise ValueError(
+                f"The number of class thresholds specified ({len(class_thresholds)}) does not match the number of model outputs ({len(classes)}).")
+            
+            invalid_indexes = [i for i, item in enumerate(class_thresholds) if not isinstance(item, float) or item < 0.0 or item > 1.0]
+            if invalid_indexes:
+                raise ValueError(f"Threshold values of classes must be of type float and [0,1]. (wrong value/s: {[class_thresholds[idx] for idx in invalid_indexes]})")
+
     if model_uuid is None:
         model_uuid = str(uuid.uuid4())
     else:
@@ -220,7 +241,7 @@ def export_classification_model(
         )
 
     metadata = {
-        "metadata_version": SingleQuotedScalarString("1.0.0"),
+        "metadata_version": SingleQuotedScalarString("2.0.0"),
         "model_uuid": SingleQuotedScalarString(model_uuid),
         "model_name": SingleQuotedScalarString(model_name),
         "creation_time": SingleQuotedScalarString(
@@ -246,8 +267,11 @@ def export_classification_model(
                     {
                         "uuid": SingleQuotedScalarString(c["uuid"]),
                         "name": SingleQuotedScalarString(c["name"]),
+                        **({"default_threshold": class_thresholds[idx]}
+                           if class_thresholds is not None and output_type == OutputType.MULTI_LABEL_CLASSIFICATION
+                           else {}),
                     }
-                    for c in classes
+                    for idx, c in enumerate(classes)
                 ],
             }
         ],
@@ -282,4 +306,3 @@ def export_classification_model(
         ) as zip:
             for file_path in file_paths:
                 zip.write(file_path, file_path.name)
-                

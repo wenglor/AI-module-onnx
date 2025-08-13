@@ -17,8 +17,6 @@ def get_heatmap_feature_layer(backbone: str, quantization: bool) -> str:
     heatmap_feature_layer_lookup = {
         "resnet18": "/backbone/layer4/layer4.1/Add_quant",
         "resnet50": "/backbone/layer4/layer4.2/Add_quant",
-        "resnext101_32x8d": "/backbone/layer4/layer4.2/Add_quant",
-        "inception_v3": "/backbone/Mixed_7c/Concat_quant",
     }
     heatmap_feature_layer = heatmap_feature_layer_lookup.get(backbone)
     if not heatmap_feature_layer:
