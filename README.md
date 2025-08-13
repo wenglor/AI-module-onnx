@@ -18,7 +18,8 @@ and dataset.
 ├── notebooks
 │   ├── data
 │   ├── utils                              # Folder containing utility scripts
-│   └── model-export-example.ipynb         # End-to-end example notebook
+│   ├── multi-class-export-example.ipynb   # End-to-end Multi-Class example notebook
+│   └── multi-label-export-example.ipynb   # End-to-end Multi-Label example notebook
 ├── Dockerfile                             # Docker configuration
 ├── docker-compose.yml                     # Docker Compose configuration
 └── requirements.txt                       # List of Python dependencies                
@@ -127,6 +128,27 @@ This is the simplest method to get started.
    ```
 
 3. Navigate to the `notebooks/` folder and open `.ipynb` file.
+
+## Choosing the right notebook
+   The two Python notebooks allow training of multi-class and multi-label models. Choose the appropriate notebook based on the type of inspection task and how the classes are defined in your application.
+
+### Multi-Class Classification
+   Using this model each image belongs to exactly one of the N possible classes.
+   - Classes are mutually exclusive
+   - The model perform one prediction per image
+   - The output is a single class label
+   - For each class the output represents the probability that the image belongs to that class
+   - The predicted class is the one with the highest probability
+   - The sum of the probability of all classes is equal to 1
+
+### Multi-Label Classification
+   Using this model each image may belong to one or more of the N possible classes.
+   - Classes are not mutually exclusive
+   - The model may predict multiple classes per image
+   - The output is a set of class labels
+   - For each class the output represents the probability that the image belongs to that class
+   - The probability is independent for each class
+   - The image belongs to a class when the probability for that class is higher than a threshold value
 
 ## Troubleshooting
 
