@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu20.04
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 
 WORKDIR /model-export-example
 
@@ -25,4 +25,4 @@ RUN apt-get remove -y python3.8 && \
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3
 
 COPY requirements.txt requirements.txt
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
