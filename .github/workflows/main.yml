@@ -22,9 +22,15 @@ jobs:
         python-version: 3.x
 
     # Install dependencies
+    # Install pandoc (system tool)
+    - name: Install pandoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc wkhtmltopdf 
+        
     - name: Install dependencies
       run: |
-        pip install nbconvert pandoc pdfkit
+        pip install nbconvert pdfkit
 
     # Convert README.md to PDF
     - name: Convert README.md to PDF
@@ -45,7 +51,7 @@ jobs:
 
     # Upload artifacts
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: generated-files
         path: |
