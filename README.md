@@ -34,8 +34,7 @@ To ensure optimal and stable operation, verify that your installed component ver
 │   └── multi-label-export-example.ipynb   # End-to-end multi-label example notebook
 ├── Dockerfile                             # Docker configuration
 ├── docker-compose.yml                     # Docker Compose configuration
-├── metadata_v2.md                         # Specification of metadata v2
-├── metadata_v3.md                         # Specification of metadata v3
+├── metadata.md                            # Specification of metadata
 ├── requirements-base.txt                  # List of Python base dependencies e.g. Torch, Numpy
 └── requirements.txt                       # List of Python dependencies                
 ```
