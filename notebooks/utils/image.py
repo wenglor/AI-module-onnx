@@ -1,7 +1,13 @@
 import cv2
 import numpy as np
-from utils.enums import DatasetColorMode
 from PIL import Image
+from utils.enums import DatasetColorMode
+
+
+def get_image_size(image_path: str):
+    with Image.open(image_path) as img:
+        width, height = img.size
+        return (height, width)
 
 
 def decode_image_bytes(image_bytes: bytes) -> np.ndarray:
@@ -108,3 +114,7 @@ def is_rgb_image(image_path: str) -> bool:
         np.all(image[:, :, 0] == image[:, :, 1])
         and np.all(image[:, :, 0] == image[:, :, 2])
     )
+
+
+def ensure_3ch_image(img):
+    return img if img.ndim == 3 and img.shape[2] == 3 else np.dstack([img] * 3)
