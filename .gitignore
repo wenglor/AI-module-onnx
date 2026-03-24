@@ -13,3 +13,8 @@
 *.u3o
 *.xml
 *.zip
+
+data/model
+data/coco-annotations/images
+data/mmdetection
+data/work_dirs

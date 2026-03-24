@@ -2,26 +2,41 @@
 
 ## Overview
 
-This repository contains a [Jupyter notebook](notebooks/multi-class-export-example.ipynb) and utility scripts for training, quantizing and exporting a PyTorch model to
+This repository contains [Jupyter notebooks](notebooks/) and utility scripts for training, quantizing and exporting a PyTorch model to
 a `.u3o` file, the format accepted by uniVision Module Image ONNX. It is a zip archive with an ONNX model file and a metadata in `YAML` format.
 
-*DISCLAIMER:* Note that all examples are provided to demonstrate the complete model creation workflow with a focus on the exported `.u3o` file.
-Training code and example images are placeholders given for purely for illustration, you will need to replace them with your actual training pipeline
-and dataset.
+*DISCLAIMER:* Note that all examples are provided to demonstrate the complete model creation workflow with a focus on the exported `.u3o` file. Training code and example images are placeholders given for purely for illustration, you will need to replace them with your actual training pipeline and dataset.
 
-### Directory Structure
+## Compatibility matrix
+
+The table below defines the officially supported version combinations between uniVision and this repository. uniVision is backward compatible, however using a combination not listed in this matrix may lead to suboptimal performance. Using an older version of uniVision with a newer version of the repository may lead to model loading error.
+
+To ensure optimal and stable operation, verify that your installed component versions match the row corresponding to your uniVision version. If a version mismatch is detected, upgrade or downgrade the affected component to the supported version, re-export the model, before loading it in uniVision.
+
+| uniVision Version | Repository Version | 
+|:-----------------:|:-----------------:|
+| 3.7               | 3                 | 
+| 3.6               | 2                 | 
+| 3.5, 3.4          | 1                 | 
+
+## Directory Structure
 
 ```shell
 ├── data
 │   ├── images                             # Folder containing example images for model training
+│   ├── coco-annotations                   # Folder containing example object detection annotations for model training
 │   └── model                              # Folder where resulting models will be stored
 ├── notebooks
 │   ├── data
 │   ├── utils                              # Folder containing utility scripts
-│   ├── multi-class-export-example.ipynb   # End-to-end Multi-Class example notebook
-│   └── multi-label-export-example.ipynb   # End-to-end Multi-Label example notebook
+│   ├── object-detection-example.ipynb     # End-to-end object detection example notebook
+│   ├── multi-class-export-example.ipynb   # End-to-end multi-class example notebook
+│   └── multi-label-export-example.ipynb   # End-to-end multi-label example notebook
 ├── Dockerfile                             # Docker configuration
 ├── docker-compose.yml                     # Docker Compose configuration
+├── metadata_v2.md                         # Specification of metadata v2
+├── metadata_v3.md                         # Specification of metadata v3
+├── requirements-base.txt                  # List of Python base dependencies e.g. Torch, Numpy
 └── requirements.txt                       # List of Python dependencies                
 ```
 
@@ -52,19 +67,22 @@ This is the simplest method to get started.
 
 1. Build and start the services.
 
+   For multi-class or multi-label classification
    ```bash
-   docker compose up --build
+   docker compose --profile classification up --build
    ```
+   For object detection. Requires a compilation of MMCV which takes up to 20mins. 
+   ```bash
+   docker compose --profile detection up --build
+   ```
+   Note: 
 
-   Internal user will default to the user with id 1000, which is the first user created on Ubuntu and will work in most cases.
-   Using the same user allows you to change the notebook file on the host from within the container.
-   If you have a different user, you can provide USER_ID and GROUP_ID parameters and the
-   container will run jupyter lab using the provided user and group.
+   Internal user will default to the user with id 1000, which is the first user created on Ubuntu and will work in most cases. Using the same user allows you to change the notebook file on the host from within the container. If you have a different user, you can provide USER_ID and GROUP_ID parameters and the container will run jupyter lab using the provided user and group. 
 
    ```bash
    export USER_ID=$(id -u)
    export GROUP_ID=$(id -g)
-   docker compose up --build
+   # your docker compose command here
    ```
 
 2. Access the Jupyter Notebook. After running the above command, navigate to the printed Jupyter URL in your browser (usually `http://localhost:8888`). When the Docker container starts, a token will be printed in the terminal output. Look for a URL containing `?token=`, followed by a string of characters. Copy this token from the terminal and append it to the Jupyter URL in your browser, e.g. `http://localhost:8888/lab?token=...`.
@@ -96,7 +114,7 @@ This is the simplest method to get started.
 2. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.base.txt -r requirements.txt
    ```
 
 3. Start the Jupyter Notebook:
@@ -118,7 +136,7 @@ This is the simplest method to get started.
 1. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.base.txt -r requirements.txt
    ```
 
 2. Start the Jupyter Notebook:
@@ -149,6 +167,15 @@ This is the simplest method to get started.
    - For each class the output represents the probability that the image belongs to that class
    - The probability is independent for each class
    - The image belongs to a class when the probability for that class is higher than a threshold value
+
+### Object-detection
+Using this model each image may contain one or more objects belonging to the N possible classes.
+- Objects can belong to the same or different classes
+- The model performs a variable number of predictions per image (one per detected object)
+- The output is a set of detections (variable length list)
+- For each detection the output represents the probability that the bounding box contains an object of that class
+- Each detection includes a class label, a confidence score, and a bounding box (coordinates and size)
+- A detection is considered valid when its confidence score is higher than a threshold value
 
 ## Troubleshooting
 

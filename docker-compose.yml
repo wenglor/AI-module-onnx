@@ -1,8 +1,10 @@
 services:
-  model-export-example:
+  classification:
+    profiles: [ "classification" ]
     build:
       context: .
       dockerfile: Dockerfile
+      target: classification
     volumes:
       - .:/app
     ports:
@@ -16,3 +18,27 @@ services:
     working_dir: "/app"
     command: python3 -m jupyter lab --ip 0.0.0.0 --port 8888
     shm_size: "2gb" # PyTorch shared memory
+
+  detection:
+    profiles: [ "detection" ]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: detection
+    volumes:
+      - .:/app
+      - mmdetection:/app/notebooks/mmdetection
+    ports:
+      - "8888:8888" # Jypyter inside the container
+    restart: unless-stopped
+    # Set the user and group ID to match the host, so that files created in the container are owned by the host user
+    # default to 1000:1000 if not set, this is the default for the first user on most Linux systems
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    environment:
+      - HOME=/app
+    working_dir: "/app"
+    command: python3 -m jupyter lab --ip 0.0.0.0 --port 8888
+    shm_size: "2gb" # PyTorch shared memory
+
+volumes:
+  mmdetection:
