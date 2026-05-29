@@ -1,4 +1,4 @@
-#### 4.1.2 `.yaml` metadata file description
+# YAML metadata file description
 
 | Name | Type | Required | Description |
 |:-:|:-:|:-:|:-|

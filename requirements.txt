@@ -6,7 +6,7 @@ jupyterlab-code-formatter==3.0.2
 matplotlib==3.10.8
 onnx==1.20.1
 onnxruntime-gpu==1.22.0
-onnxscript==0.5.7
+onnxscript==0.6.2
 onnx-simplifier==0.4.36
 onnx-graphsurgeon==0.5.8
 opencv-python==4.10.0.84
