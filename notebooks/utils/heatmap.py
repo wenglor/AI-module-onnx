@@ -1,3 +1,6 @@
+import onnx
+
+
 def get_heatmap_feature_layer(backbone: str, quantization: bool) -> str:
     """
     Returns the heatmap feature layer name for the given backbone architecture.
@@ -13,18 +16,20 @@ def get_heatmap_feature_layer(backbone: str, quantization: bool) -> str:
     Raises:
         ValueError: If the provided backbone is not supported.
     """
-
-    heatmap_feature_layer_lookup = {
-        "resnet18": "/backbone/layer4/layer4.1/Add_quant",
-        "resnet50": "/backbone/layer4/layer4.2/Add_quant",
-    }
-    heatmap_feature_layer = heatmap_feature_layer_lookup.get(backbone)
-    if not heatmap_feature_layer:
-        supported_backbones = ", ".join(heatmap_feature_layer_lookup.keys())
-        raise ValueError(
-            f"'{backbone}' is not a supported backbone. Supported backbones are: {supported_backbones}"
+    if backbone == "RegNet_X_3_2GF":
+        recipro_cam_feature_layer = (
+            "/backbone/trunk_output/block4/block4-1/activation/Relu_output_0_QuantizeLinear"
+            if quantization
+            else "/backbone/trunk_output/block4/block4-1/Add"
         )
-    if not quantization:
-        heatmap_feature_layer = heatmap_feature_layer.replace("_quant", "")
+    elif backbone == "RegNet_X_1_6GF":
+        recipro_cam_feature_layer = (
+            "/backbone/trunk_output/block4/block4-1/activation/Relu_output_0_QuantizeLinear"
+            if quantization
+            else "/backbone/trunk_output/block4/block4-1/Add"
+        )
+    else:
+        raise ValueError(f"{backbone} is not a supported backbone.")
 
-    return heatmap_feature_layer
+    return recipro_cam_feature_layer
+
