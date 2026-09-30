@@ -28,6 +28,7 @@ class OutputType(StrEnum):
     MULTI_CLASS_CLASSIFICATION = "MULTI_CLASS_CLASSIFICATION"
     MULTI_LABEL_CLASSIFICATION = "MULTI_LABEL_CLASSIFICATION"
     OBJECT_DETECTION = "OBJECT_DETECTION"
+    ROTATED_OBJECT_DETECTION = "ROTATED_OBJECT_DETECTION"
 
 
 class Quantization(StrEnum):
@@ -37,8 +38,14 @@ class Quantization(StrEnum):
 
 class BoxesFormat(StrEnum):
     center_size = "center_size"
+    center_size_angle = "center_size_angle"
     left_top_right_bottom = "left_top_right_bottom"
     top_left_size = "top_left_size"
+
+
+class AngleUnit(StrEnum):
+    radians = "radians"
+    degrees = "degrees"
 
 
 class BoxesCoordinate(StrEnum):
