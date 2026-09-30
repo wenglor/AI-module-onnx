@@ -15,6 +15,8 @@
 *.zip
 
 data/model
-data/coco-annotations/images
+data/coco-annotations/*/images/*
+!data/coco-annotations/*/images/.gitkeep
 data/mmdetection
+data/mmrotate
 data/work_dirs

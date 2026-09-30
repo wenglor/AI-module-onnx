@@ -28,6 +28,7 @@ services:
     volumes:
       - .:/app
       - mmdetection:/app/notebooks/mmdetection
+      - mmrotate:/app/notebooks/mmrotate
     ports:
       - "8888:8888" # Jypyter inside the container
     restart: unless-stopped
@@ -42,3 +43,4 @@ services:
 
 volumes:
   mmdetection:
+  mmrotate:

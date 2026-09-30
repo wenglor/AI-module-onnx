@@ -1,4 +1,5 @@
 import json
+import math
 import pathlib
 from typing import Dict, List, Optional, Tuple
 
@@ -188,3 +189,91 @@ def visualize_bbox(
         cv2.destroyAllWindows()
 
     return vis_image
+
+
+def draw_rotated_boxes(
+    image: np.ndarray,
+    boxes_xywhr: np.ndarray,
+    labels: np.ndarray,
+    scores: np.ndarray,
+    class_names: Optional[List[str]] = None,
+    score_threshold: float = 0.0,
+    box_color: Tuple[int, int, int] = (255, 0, 0),
+    text_color: Tuple[int, int, int] = (255, 255, 255),
+    thickness: int = 2,
+    save_path: Optional[str] = None,
+) -> np.ndarray:
+    """Draw oriented bounding boxes on an image.
+
+    Args:
+        image: Input image in BGR format (H, W, 3)
+        boxes_xywhr: Boxes as (N, 5) array — [x, y, w, h, angle_deg] where
+            (x, y) is the top-left of the unrotated box and angle_deg is the
+            clockwise rotation applied around the box centre (CVAT convention).
+        labels: Class labels, shape (N,)
+        scores: Confidence scores, shape (N,)
+    """
+    vis = image.copy()
+    mask = scores > score_threshold
+    boxes_xywhr = boxes_xywhr[mask]
+    labels = labels[mask]
+    scores = scores[mask]
+
+    for box, label, score in zip(boxes_xywhr, labels, scores):
+        x, y, w, h, angle_deg = box
+        cx, cy = x + w / 2, y + h / 2
+        hw, hh = w / 2, h / 2
+        cos_a = math.cos(math.radians(angle_deg))
+        sin_a = math.sin(math.radians(angle_deg))
+        pts = np.array(
+            [
+                [cx + cos_a * dx - sin_a * dy, cy + sin_a * dx + cos_a * dy]
+                for dx, dy in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+            ],
+            dtype=np.int32,
+        )
+        cv2.polylines(vis, [pts], isClosed=True, color=box_color, thickness=thickness)
+
+        if class_names is not None and 0 <= label < len(class_names):
+            label_text = f"{class_names[label]}: {score:.2f}"
+        else:
+            label_text = f"Class {label}: {score:.2f}"
+
+        tx, ty = int(pts[:, 0].min()), int(pts[:, 1].min())
+        (tw, th), baseline = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(vis, (tx, ty - th - baseline - 5), (tx + tw, ty), box_color, -1)
+        cv2.putText(vis, label_text, (tx, ty - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
+
+    if save_path:
+        cv2.imwrite(str(save_path), vis)
+    return vis
+
+
+def visualize_rotated_bbox(
+    image_path: str,
+    boxes_xywhr: np.ndarray,
+    labels: np.ndarray,
+    scores: np.ndarray,
+    class_names: Optional[List[str]] = None,
+    score_threshold: float = 0.3,
+    save_path: Optional[str] = None,
+    display: bool = False,
+) -> np.ndarray:
+    """Load an image and draw oriented bounding boxes.
+
+    Args:
+        image_path: Path to the input image
+        boxes_xywhr: Boxes as (N, 5) array — [x, y, w, h, angle_deg].
+            Pass datumaro Bbox annotations as:
+                np.array([[a.x, a.y, a.w, a.h, a.attributes.get('rotation', 0.0)]
+                           for a in annotations])
+    """
+    image = cv2.imread(str(image_path))
+    vis = draw_rotated_boxes(
+        image, boxes_xywhr, labels, scores, class_names, score_threshold, save_path=save_path
+    )
+    if display:
+        cv2.imshow("Rotated Detection Results", vis)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    return vis

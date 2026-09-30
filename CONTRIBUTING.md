@@ -83,7 +83,19 @@ Please ensure your changes:
    - Source branch: `release/vX.Y.Z`
    - Target branch: `main`
 
-4. Synchronize the changes back to the Gitlab repository
+4. Tag the release on the merge commit in `main` and push the tag to both remotes:
+
+   ```bash
+   git checkout main
+   git pull github main
+   git tag -a vX.Y -m "Release vX.Y"
+   git push github vX.Y
+   git push origin vX.Y
+   ```
+
+   The tag version must match the repository version in the compatibility matrix of the README.
+
+5. Synchronize the changes back to the Gitlab repository
 
 ### Synchronizing Repositories
 
