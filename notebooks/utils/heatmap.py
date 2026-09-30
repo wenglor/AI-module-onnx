@@ -17,19 +17,24 @@ def get_heatmap_feature_layer(backbone: str, quantization: bool) -> str:
         ValueError: If the provided backbone is not supported.
     """
     if backbone == "RegNet_X_3_2GF":
-        recipro_cam_feature_layer = (
+        feature_layer = (
             "/backbone/trunk_output/block4/block4-1/activation/Relu_output_0_QuantizeLinear"
             if quantization
             else "/backbone/trunk_output/block4/block4-1/Add"
         )
     elif backbone == "RegNet_X_1_6GF":
-        recipro_cam_feature_layer = (
+        feature_layer = (
             "/backbone/trunk_output/block4/block4-1/activation/Relu_output_0_QuantizeLinear"
             if quantization
             else "/backbone/trunk_output/block4/block4-1/Add"
         )
+    elif backbone == "HGNetV2_B4":
+        feature_layer = (
+            "/backbone/stages/stages.3/blocks/blocks.0/aggregation/aggregation.1/act/Relu_output_0_QuantizeLinear"
+            if quantization
+            else "/backbone/stages/stages.3/blocks/blocks.0/aggregation/aggregation.1/act/Relu"
+        )
     else:
         raise ValueError(f"{backbone} is not a supported backbone.")
 
-    return recipro_cam_feature_layer
-
+    return feature_layer

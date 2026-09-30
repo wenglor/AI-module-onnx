@@ -83,3 +83,11 @@ RUN mkdir -p /app/notebooks/mmdetection && \
     git -C /app/notebooks/mmdetection fetch --depth 1 origin cfd5d3a985b0249de009b67d04f37263e11cdf3d && \
     git -C /app/notebooks/mmdetection checkout FETCH_HEAD
 RUN pip install -v -e /app/notebooks/mmdetection --no-build-isolation
+
+RUN mkdir -p /app/notebooks/mmrotate && \
+    git -C /app/notebooks/mmrotate init && \
+    git -C /app/notebooks/mmrotate remote add origin https://github.com/open-mmlab/mmrotate.git && \
+    git -C /app/notebooks/mmrotate fetch --depth 1 origin 3ff004eb21ea040455b5585db229edba4037f1bf && \
+    git -C /app/notebooks/mmrotate checkout FETCH_HEAD && \
+    sed -i "s/mmdet_maximum_version = '3.2.0'/mmdet_maximum_version = '3.4.0'/" /app/notebooks/mmrotate/mmrotate/__init__.py
+RUN pip install -v -e /app/notebooks/mmrotate --no-build-isolation

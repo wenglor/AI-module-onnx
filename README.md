@@ -15,6 +15,7 @@ To ensure optimal and stable operation, verify that your installed component ver
 
 | uniVision Version | Repository Version | 
 |:-----------------:|:-----------------:|
+| 3.8               | 4                 | 
 | 3.7               | 3                 | 
 | 3.6               | 2                 | 
 | 3.5, 3.4          | 1                 | 
@@ -23,46 +24,33 @@ To ensure optimal and stable operation, verify that your installed component ver
 
 ```shell
 ├── data
-│   ├── images                             # Folder containing example images for model training
-│   ├── coco-annotations                   # Folder containing example object detection annotations for model training
-│   └── model                              # Folder where resulting models will be stored
+│   ├── images                                         # Folder containing example images for model training
+│   ├── coco-annotations                               # Folder containing example object detection annotations for model training
+│   └── model                                          # Folder where resulting models will be stored
 ├── notebooks
 │   ├── data
-│   ├── utils                              # Folder containing utility scripts
-│   ├── object-detection-example.ipynb     # End-to-end object detection example notebook
-│   ├── multi-class-export-example.ipynb   # End-to-end multi-class example notebook
-│   └── multi-label-export-example.ipynb   # End-to-end multi-label example notebook
-├── Dockerfile                             # Docker configuration
-├── docker-compose.yml                     # Docker Compose configuration
-├── metadata.md                            # Specification of metadata
-├── requirements-base.txt                  # List of Python base dependencies e.g. Torch, Numpy
-└── requirements.txt                       # List of Python dependencies                
+│   ├── utils                                          # Folder containing utility scripts
+│   ├── object-detection-export-example.ipynb          # End-to-end object detection example notebook
+│   ├── rotated-object-detection-export-example.ipynb  # End-to-end rotated object detection example notebook
+│   ├── multi-class-export-example.ipynb               # End-to-end multi-class example notebook
+│   └── multi-label-export-example.ipynb               # End-to-end multi-label example notebook
+├── Dockerfile                                         # Docker configuration
+├── docker-compose.yml                                 # Docker Compose configuration
+├── metadata.md                                        # Specification of metadata
+├── requirements.base.txt                              # List of Python base dependencies e.g. Torch, Numpy
+└── requirements.txt                                   # List of Python dependencies
 ```
 
 (recreate using `tree -L 2 --dirsfirst`)
 
 ## Prerequisites
 
-To follow the example have two options: if you have Docker installed, you can build an environment that has all requirements inside the Docker image. Alternatively, you can set up your environment on your  Linux, Mac, or Windows host
-
-### Option 1: Installation using Docker (recommended)
-
-FYI we use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu 22.04, newer versions should also work.
+We use docker engine within a WSL2 environment on Windows. We also tested this with Ubuntu 22.04, newer versions should also work.
 
 - [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)
 - [Docker](https://docs.docker.com/engine/install/)
 
-### Option 2: Installation without Docker
-
-- [Python 3.8+](https://www.python.org/downloads/) (optional, for system Python setup without Docker)
-- [virtualenv](https://virtualenv.pypa.io/en/latest/installation.html) (optional, for venv setup without Docker)
-- [Jupyter Notebook](https://jupyter.org/install) (if running outside Docker)
-
-## Installation and Setup
-
-### Option 1: Using Docker Compose (recommended)
-
-This is the simplest method to get started.
+## Installation and Setup using Docker Compose 
 
 1. Build and start the services.
 
@@ -70,7 +58,7 @@ This is the simplest method to get started.
    ```bash
    docker compose --profile classification up --build
    ```
-   For object detection. Requires a compilation of MMCV which takes up to 20mins. 
+   For object detection and rotated object detection. Requires a compilation of MMCV which takes up to 20mins. 
    ```bash
    docker compose --profile detection up --build
    ```
@@ -92,62 +80,8 @@ This is the simplest method to get started.
    docker compose down
    ```
 
-### Option 2: Using Virtual Environment (venv) - when not using Docker
-
-1. Create and activate a virtual environment.
-
-   On macOS/Linux:
-
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-   On Windows:
-
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   pip install -r requirements.base.txt -r requirements.txt
-   ```
-
-3. Start the Jupyter Notebook:
-
-   ```bash
-   jupyter notebook
-   ```
-
-4. Navigate to the `notebooks/` folder and open `.ipynb` file.
-
-5. Deactivate the virtual environment after you're done:
-
-   ```bash
-   deactivate
-   ```
-
-### Option 3: Using System Python
-
-1. Install dependencies:
-
-   ```bash
-   pip install -r requirements.base.txt -r requirements.txt
-   ```
-
-2. Start the Jupyter Notebook:
-
-   ```bash
-   jupyter notebook
-   ```
-
-3. Navigate to the `notebooks/` folder and open `.ipynb` file.
-
 ## Choosing the right notebook
-   The two Python notebooks allow training of multi-class and multi-label models. Choose the appropriate notebook based on the type of inspection task and how the classes are defined in your application.
+   The Python notebooks allow training of multi-class, multi-label, object detection and rotated object detection models. Choose the appropriate notebook based on the type of inspection task and how the classes are defined in your application.
 
 ### Multi-Class Classification
    Using this model each image belongs to exactly one of the N possible classes.
@@ -168,17 +102,23 @@ This is the simplest method to get started.
    - The image belongs to a class when the probability for that class is higher than a threshold value
 
 ### Object-detection
-Using this model each image may contain one or more objects belonging to the N possible classes.
-- Objects can belong to the same or different classes
-- The model performs a variable number of predictions per image (one per detected object)
-- The output is a set of detections (variable length list)
-- For each detection the output represents the probability that the bounding box contains an object of that class
-- Each detection includes a class label, a confidence score, and a bounding box (coordinates and size)
-- A detection is considered valid when its confidence score is higher than a threshold value
+   Using this model each image may contain one or more objects belonging to the N possible classes. Bounding boxes are axis-aligned.
+   - Objects can belong to the same or different classes
+   - The model performs a variable number of predictions per image (one per detected object)
+   - The output is a set of detections (variable length list)
+   - For each detection the output represents the probability that the bounding box contains an object of that class
+   - Each detection includes a class label, a confidence score, and a bounding box (coordinates and size)
+   - A detection is considered valid when its confidence score is higher than a threshold value
+
+### Rotated Object-detection
+   Same as object detection, but each bounding box also has a rotation angle, so it fits tightly around objects at arbitrary orientations (e.g. parts on a conveyor).
+   - Each detection includes a class label, a confidence score, and a rotated bounding box (center, size and angle)
+   - Use it when objects are elongated or tilted, where an axis-aligned box would cover a lot of background or overlap neighbouring objects
+   - The angle describes the orientation of the box, not the direction the object is facing (a box rotated by 180° is the same box)
 
 ## Troubleshooting
 
-### Permission problems with Docker (Option 1)
+### Permission problems with Docker
 
 `PermissionError: [Errno 13] Permission denied: '/home/{USER}/.local/share'`
 

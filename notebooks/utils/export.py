@@ -15,6 +15,7 @@ import pyzipper
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import SingleQuotedScalarString
 from utils.enums import (
+    AngleUnit,
     BoxesCoordinate,
     BoxesFormat,
     ChannelOrder,
@@ -81,6 +82,7 @@ def validate_object_detection_onnx_model(
     boxes_output_index,
     labels_output_index,
     scores_output_index,
+    boxes_format: Optional[Union[BoxesFormat, str]] = None,
 ):
     onnx_model = onnx.load(onnx_model_path)
     onnx.checker.check_model(onnx_model)
@@ -131,13 +133,25 @@ def validate_object_detection_onnx_model(
     boxes_shape_dims = boxes_tensor_type.shape.dim
     if len(boxes_shape_dims) != 2:
         raise ValueError(
-            f"Boxes output (index {boxes_output_index}) must be 2D (detections_count, 4), but has {len(boxes_shape_dims)} dimensions."
+            f"Boxes output (index {boxes_output_index}) must be 2D (detections_count, box_values), but has {len(boxes_shape_dims)} dimensions."
         )
 
+    if boxes_format is not None:
+        validate_enum("boxes_format", boxes_format, BoxesFormat)
+        if isinstance(boxes_format, str):
+            boxes_format = BoxesFormat(boxes_format)
+
+    # Standard axis-aligned formats use 4 values; rotated boxes use
+    # (cx, cy, w, h, angle) = 5 values and are exported as 'center_size_angle'.
+    if boxes_format == BoxesFormat.center_size_angle:
+        allowed_second_dims = (5,)
+    else:
+        allowed_second_dims = (4,)
+
     second_dim = boxes_shape_dims[1]
-    if second_dim.dim_value != 4:
+    if second_dim.dim_value not in allowed_second_dims:
         raise ValueError(
-            f"Boxes output (index {boxes_output_index}) second dimension must be 4, but got {second_dim.dim_value}."
+            f"Boxes output (index {boxes_output_index}) second dimension must be one of {allowed_second_dims} for boxes_format={boxes_format}, but got {second_dim.dim_value}."
         )
 
     labels_output = onnx_model.graph.output[labels_output_index]
@@ -213,7 +227,7 @@ def validate_classes(classes: Union[List[str], List[ClassDict]]) -> List[ClassDi
     return classes
 
 
-def export_univision_model_v3(
+def export_univision_model_v4(
     univision_model_path: str,
     onnx_model_path: str,
     classes: Union[list[str], list[ClassDict]],
@@ -245,6 +259,7 @@ def export_univision_model_v3(
     scores_output_index: Optional[int] = None,
     boxes_format: Optional[Union[BoxesFormat, str]] = None,
     boxes_coordinates: Optional[Union[BoxesCoordinate, str]] = None,
+    angle_unit: Optional[Union[AngleUnit, str]] = None,
     max_detections: Optional[int] = None,
     zip_password: Optional[str] = None,
 ):
@@ -295,7 +310,7 @@ def export_univision_model_v3(
         input_color_space (Union[InputColorSpace, str]): Color space of the input.
             Either 'RGB' or 'BGR'. Defaults to 'RGB'.
         output_type (Union[OutputType, str]): Output type of the model.
-            E.g., 'OBJECT_DETECTION'. Defaults to 'OBJECT_DETECTION'.
+            E.g., 'OBJECT_DETECTION' or 'ROTATED_OBJECT_DETECTION'. Defaults to 'OBJECT_DETECTION'.
         heatmap_feature_layer (Optional[str]): Heatmap feature layer name of the model.
             Defaults to None.
         class_thresholds (Optional[list[float]]): Only applicable to multi label and object detection. Threshold values of classes.
@@ -310,10 +325,13 @@ def export_univision_model_v3(
         scores_output_index (Optional[int]): Only applicable to object detection. The index of the ONNX output with confidence scores
             per detection. Defaults to 2.
         boxes_format (Optional[BoxesFormat, str]):  Only applicable to object detection. Describes the format of bounding boxes in the corresponding ONNX output
-            with index boxes_output_index. Either 'center_size' or 'left_top_right_bottom' or 'top_left_size'.
-            Defaults to 'left_top_right_bottom'.
+            with index boxes_output_index. Either 'center_size', 'center_size_angle', 'left_top_right_bottom' or 'top_left_size'.
+            'center_size_angle' is only valid for 'ROTATED_OBJECT_DETECTION' and is [x_center, y_center, width, height, angle].
+            Must be provided.
         boxes_coordinates (Optional[BoxesCoordinate, str]) : Only applicable to object detection. Describes the format of bounding boxes coordinates in the
-            corresponding ONNX output with index boxes_output_index. Either 'relative' or 'absolute'. Defaults to 'absolute'.
+            corresponding ONNX output with index boxes_output_index. Either 'relative' or 'absolute'. Must be provided.
+        angle_unit (Optional[AngleUnit, str]): Only applicable to 'ROTATED_OBJECT_DETECTION'. The unit of the angle in boxes_format.
+            Either 'radians' or 'degrees'. Positive angle is clockwise (image y axis points down). Must be provided for 'ROTATED_OBJECT_DETECTION'.
         max_detections (int): Only applicable to object detection. uniVision uses this to filter the detections of the ONNX model
             if it returns too many. Defaults to 20.
 
@@ -325,6 +343,8 @@ def export_univision_model_v3(
     validate_enum("dataset_color_mode", dataset_color_mode, DatasetColorMode)
     validate_enum("input_color_space", input_color_space, InputColorSpace)
     validate_enum("output_type", output_type, OutputType)
+    if isinstance(output_type, str):
+        output_type = OutputType(output_type)
     validate_enum("quantization", quantization, Optional[Quantization])
     validate_enum("inference_device", inference_device, InferenceDevice)
     validate_enum("resize_mode", resize_mode, ResizeMode)
@@ -341,25 +361,55 @@ def export_univision_model_v3(
 
     # validate object detection args and validate onnx model
     outputs_extra_args = {}
-    if output_type != OutputType.OBJECT_DETECTION and (
+    object_detection_output_types = (
+        OutputType.OBJECT_DETECTION,
+        OutputType.ROTATED_OBJECT_DETECTION,
+    )
+    if output_type not in object_detection_output_types and (
         boxes_output_index is not None
         or labels_output_index is not None
         or scores_output_index is not None
         or max_detections is not None
         or boxes_format is not None
         or boxes_coordinates is not None
+        or angle_unit is not None
         or class_colors is not None
     ):
         raise ValueError(
-            "boxes_output_index, labels_output_index, scores_output_index, max_detections, boxes_format, boxes_coordinates and class_colors are only supported for object detection."
+            "boxes_output_index, labels_output_index, scores_output_index, max_detections, boxes_format, boxes_coordinates, angle_unit and class_colors are only supported for object detection."
         )
-    elif output_type == OutputType.OBJECT_DETECTION:
+    elif output_type in object_detection_output_types:
 
         boxes_output_index = 0 if boxes_output_index is None else boxes_output_index
         labels_output_index = 1 if labels_output_index is None else labels_output_index
         scores_output_index = 2 if scores_output_index is None else scores_output_index
 
         max_detections = 20 if max_detections is None else max_detections
+
+        if boxes_format is None:
+            raise ValueError("boxes_format must be provided for object detection.")
+        if boxes_coordinates is None:
+            raise ValueError("boxes_coordinates must be provided for object detection.")
+
+        if output_type == OutputType.ROTATED_OBJECT_DETECTION:
+            if angle_unit is None:
+                raise ValueError(
+                    "angle_unit must be provided for ROTATED_OBJECT_DETECTION."
+                )
+            if boxes_format != BoxesFormat.center_size_angle:
+                raise ValueError(
+                    "For ROTATED_OBJECT_DETECTION boxes_format must be 'center_size_angle'."
+                )
+            validate_enum("angle_unit", angle_unit, AngleUnit)
+        else:
+            if boxes_format == BoxesFormat.center_size_angle:
+                raise ValueError(
+                    "boxes_format 'center_size_angle' is only valid for ROTATED_OBJECT_DETECTION."
+                )
+            if angle_unit is not None:
+                raise ValueError(
+                    "angle_unit is only supported for ROTATED_OBJECT_DETECTION."
+                )
 
         validate_enum("boxes_format", boxes_format, BoxesFormat)
         validate_enum("boxes_coordinates", boxes_coordinates, BoxesCoordinate)
@@ -389,6 +439,7 @@ def export_univision_model_v3(
                 boxes_output_index,
                 labels_output_index,
                 scores_output_index,
+                boxes_format=boxes_format,
             )
         )
 
@@ -416,6 +467,8 @@ def export_univision_model_v3(
                 "max_detections": max_detections,
             }
         )
+        if output_type == OutputType.ROTATED_OBJECT_DETECTION:
+            outputs_extra_args["angle_unit"] = str(angle_unit)
     elif output_type in [
         OutputType.MULTI_LABEL_CLASSIFICATION,
         OutputType.MULTI_CLASS_CLASSIFICATION,
@@ -533,6 +586,7 @@ def export_univision_model_v3(
     if output_type in [
         OutputType.MULTI_LABEL_CLASSIFICATION,
         OutputType.OBJECT_DETECTION,
+        OutputType.ROTATED_OBJECT_DETECTION,
     ]:
         if class_thresholds is None:
             class_thresholds = [0.5] * len(classes)
@@ -569,7 +623,7 @@ def export_univision_model_v3(
 
     # create metadata
     metadata = {
-        "metadata_version": SingleQuotedScalarString("3.0.0"),
+        "metadata_version": SingleQuotedScalarString("4.0.0"),
         "model_uuid": SingleQuotedScalarString(model_uuid),
         "model_name": SingleQuotedScalarString(model_name),
         "creation_time": SingleQuotedScalarString(

@@ -1,9 +1,13 @@
+import logging
 import os
+from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import onnx
 import onnxruntime
 import torch
+from onnx import helper, numpy_helper, shape_inference
 from onnxruntime.quantization.quantize import (
     CalibrationDataReader,
     CalibrationMethod,
@@ -14,6 +18,8 @@ from onnxruntime.quantization.quantize import (
 from onnxruntime.quantization.shape_inference import quant_pre_process
 from PIL import Image
 from torchvision import transforms
+
+logger = logging.getLogger(__name__)
 
 
 class TorchCalibrationDataReader(CalibrationDataReader):
@@ -140,10 +146,14 @@ def find_postprocess_nodes_to_exclude(onnx_model_path):
 
 
 def get_nodes_to_exclude(onnx_model):
-    """Finds the node names of first conv, softmax and last gemm.
-    Excluding these nodes is a best practice for minimizing quantization degradation"""
+    """Finds the node names of first conv, last gemm and the output activation
+    (softmax, or sigmoid for multi-label models).
+    Excluding these nodes is a best practice for minimizing quantization degradation.
+    Excluding the output activation also keeps the classification head in one
+    unquantized part, which the heatmap computation relies on."""
 
     all_nodes = onnx_model.graph.node
+    graph_outputs = {output.name for output in onnx_model.graph.output}
     first_conv_name = next(
         (node.name for node in all_nodes if node.op_type == "Conv"), None
     )
@@ -154,6 +164,10 @@ def get_nodes_to_exclude(onnx_model):
         node.name
         for node in onnx_model.graph.node
         if "Softmax" in node.name
+        or (
+            node.op_type in ("Softmax", "Sigmoid")
+            and graph_outputs.intersection(node.output)
+        )
         or node.name == first_conv_name
         or node.name == last_gemm_name
     ]
@@ -162,19 +176,6 @@ def get_nodes_to_exclude(onnx_model):
 
 def sort_nodes_topologically(model: onnx.ModelProto):
     """Reorder graph nodes into "latest-possible" topological order.
-
-    QDQ models exported by PyTorch/ORT place weight DequantizeLinear nodes near
-    the top of the node list even though they are consumed only by layers deep in
-    the network.  The C++ SplitONNXModel partitions by sequential list position,
-    so those early weight nodes get stranded in the wrong half.
-
-    This function schedules every node as late as possible: a node is emitted
-    only after all nodes that consume its outputs have been emitted (in reverse).
-    Concretely it runs a reverse Kahn's DFS from the graph outputs, collecting
-    nodes in reverse execution order, then reverses the result.  Weight
-    DequantizeLinear nodes therefore land immediately before the Conv/Gemm nodes
-    that use them, making any sequential split correct without needing to know
-    the split point in advance.
 
     Args:
         model: the loaded ONNX model to reorder.
@@ -234,3 +235,532 @@ def sort_nodes_topologically(model: onnx.ModelProto):
 
     del graph.node[:]
     graph.node.extend(reversed(reverse_order))
+
+
+_CPU_FALLBACK_PREFIX = "cpu_fallback"
+# Cheap nodes that are moved to the CPU when only unquantized nodes follow them.
+_CHEAP_TAIL_OPS = {
+    "Concat",
+    "Flatten",
+    "Gather",
+    "Identity",
+    "Reshape",
+    "Slice",
+    "Split",
+    "Squeeze",
+    "Transpose",
+    "Unsqueeze",
+    "Clip",
+    "HardSigmoid",
+    "LeakyRelu",
+    "Relu",
+    "Sigmoid",
+    "Tanh",
+}
+
+
+def keep_fp32_nodes_on_cpu(model: onnx.ModelProto) -> onnx.ModelProto:
+    """Keeps the unquantized nodes of a QDQ model on the CPU.
+
+    Nodes excluded from quantization (e.g. the first and last layers of a classifier, see
+    get_nodes_to_exclude, or the post-processing of a detector, see
+    find_postprocess_nodes_to_exclude) run faster on the CPU. This inserts a few
+    lightweight nodes where the model switches between quantized and unquantized parts,
+    so the unquantized parts are executed on the CPU while the quantized parts stay
+    hardware-accelerated. The model's inputs, outputs and results are unchanged.
+
+    Args:
+        model: a single-input QDQ model with static shapes, e.g. the output of quantize_static.
+
+    Returns:
+        A new, topologically sorted model.
+    """
+    graph = model.graph
+    if any(n.name.startswith(_CPU_FALLBACK_PREFIX) for n in graph.node):
+        raise ValueError("keep_fp32_nodes_on_cpu() was already applied to this model.")
+    if len(graph.input) != 1:
+        raise ValueError(f"Expected a single graph input, got {len(graph.input)}.")
+
+    seen = set()
+    for k, node in enumerate(graph.node):  # nodes are matched by name below
+        if not node.name or node.name in seen:
+            node.name = f"{node.op_type}_{k}"
+        seen.add(node.name)
+
+    graph_input = graph.input[0].name
+    graph_outputs = {o.name for o in graph.output}
+    producer = {o: n for n in graph.node for o in n.output}
+    consumers = defaultdict(list)
+    for node in graph.node:
+        for input_name in node.input:
+            consumers[input_name].append(node)
+
+    initializers = {i.name: i for i in graph.initializer}
+    constants = set(initializers)
+    for (
+        node
+    ) in (
+        graph.node
+    ):  # tensors computed from initializers only, e.g. weight DequantizeLinear
+        if all(not i or i in constants for i in node.input):
+            constants.update(node.output)
+
+    def is_qdq(node):
+        return node.op_type in ("QuantizeLinear", "DequantizeLinear")
+
+    def activation_inputs(node):
+        return [i for i in node.input if i and i not in constants]
+
+    def is_quantized(node):
+        inputs = activation_inputs(node)
+        return (
+            bool(inputs)
+            and all(
+                i in producer and producer[i].op_type == "DequantizeLinear"
+                for i in inputs
+            )
+            and all(
+                o not in graph_outputs
+                and consumers[o]
+                and all(c.op_type == "QuantizeLinear" for c in consumers[o])
+                for o in node.output
+            )
+        )
+
+    fp32_nodes = [
+        n
+        for n in graph.node
+        if not is_qdq(n) and activation_inputs(n) and not is_quantized(n)
+    ]
+    fp32_names = {n.name for n in fp32_nodes}
+
+    # Cheap quantized nodes followed only by unquantized ones (e.g. flattening and
+    # concatenating detection head outputs) are moved to the CPU too.
+    def downstream(node):
+        """Non-QDQ consumers of node, looking through QuantizeLinear/DequantizeLinear."""
+        result, stack = [], list(node.output)
+        while stack:
+            for c in consumers[stack.pop()]:
+                if is_qdq(c):
+                    stack.extend(c.output)
+                else:
+                    result.append(c)
+        return result
+
+    tail_names = set()
+    for node in reversed(graph.node):  # consumers are visited before producers
+        if (
+            node.op_type in _CHEAP_TAIL_OPS
+            and node.name not in fp32_names
+            and not is_qdq(node)
+            and all(
+                c.name in fp32_names or c.name in tail_names for c in downstream(node)
+            )
+        ):
+            tail_names.add(node.name)
+    cpu_names = fp32_names | tail_names
+
+    # Tensors entering a CPU part: the graph input and dequantized activations that come
+    # from an accelerated part.
+    def from_accelerated_part(dq):
+        quantize = producer.get(dq.input[0])
+        source = producer.get(quantize.input[0]) if quantize is not None else None
+        return source is not None and source.name not in cpu_names
+
+    entries = [
+        t
+        for t in [graph_input]
+        + [
+            n.output[0]
+            for n in graph.node
+            if n.op_type == "DequantizeLinear"
+            and n.input[0] not in constants
+            and from_accelerated_part(n)
+        ]
+        if any(c.name in cpu_names for c in consumers[t])
+    ]
+    # Tensors leaving an unquantized part, i.e. quantized again.
+    exits = [
+        n.input[0]
+        for n in graph.node
+        if n.op_type == "QuantizeLinear"
+        and n.input[0] in producer
+        and producer[n.input[0]].name in fp32_names
+    ]
+
+    inferred = shape_inference.infer_shapes(model)
+    shapes = {
+        vi.name: [d.dim_value for d in vi.type.tensor_type.shape.dim]
+        for vi in list(inferred.graph.value_info) + list(inferred.graph.input)
+    }
+
+    def is_static(tensor):
+        return bool(shapes.get(tensor)) and all(d > 0 for d in shapes[tensor])
+
+    entries = [
+        t for t in entries if is_static(t)
+    ]  # dynamic shapes already run on the CPU
+    for tensor in exits:
+        if not is_static(tensor):
+            raise ValueError(
+                f"Tensor {tensor} needs a fully static shape, got {shapes.get(tensor)}."
+            )
+
+    def name(suffix):
+        return f"{_CPU_FALLBACK_PREFIX}_{suffix}"
+
+    def const(suffix, values, dtype=np.int64):
+        graph.initializer.append(
+            numpy_helper.from_array(np.array(values, dtype=dtype), name(suffix))
+        )
+        return name(suffix)
+
+    big = const("big", 1e30, dtype=np.float32)
+    one = const("one", [1])
+    new_nodes, rewires = [], []
+
+    def hide_shape(tensor, tag, zero=None):
+        # Reshape(tensor, shape + zero), where zero = [int(tensor[0, 0, ...] > 1e30)] is always
+        # 0 but computed from the data. The batch dim is 0, i.e. copied from the input.
+        # An existing zero computed upstream of tensor can be reused.
+        rank = len(shapes[tensor])
+        reshape = [
+            helper.make_node(
+                "Add",
+                [
+                    const(f"{tag}_shape", [0] + shapes[tensor][1:]),
+                    zero or name(f"{tag}_zero"),
+                ],
+                [name(f"{tag}_shape_dyn")],
+                name=name(f"{tag}_AddShape"),
+            ),
+            helper.make_node(
+                "Reshape",
+                [tensor, name(f"{tag}_shape_dyn")],
+                [name(f"{tag}_out")],
+                name=name(f"{tag}_Reshape"),
+            ),
+        ]
+        if zero:
+            return reshape
+        # For a dequantized tensor, zero is computed from the quantized values (> the type's
+        # max, also always false), so no DequantizeLinear is moved onto the helper nodes.
+        source, threshold = tensor, big
+        dequantize = producer.get(tensor)
+        if (
+            dequantize is not None
+            and dequantize.op_type == "DequantizeLinear"
+            and dequantize.input[0] not in constants
+            and len(dequantize.input) > 2
+            and dequantize.input[2] in initializers
+        ):
+            dtype = numpy_helper.to_array(initializers[dequantize.input[2]]).dtype
+            source = dequantize.input[0]
+            threshold = const(f"{tag}_max", np.iinfo(dtype).max, dtype=dtype)
+        return [
+            helper.make_node(
+                "Slice",
+                [
+                    source,
+                    const(f"{tag}_starts", [0] * rank),
+                    const(f"{tag}_ends", [1] * rank),
+                ],
+                [name(f"{tag}_first")],
+                name=name(f"{tag}_Slice"),
+            ),
+            helper.make_node(
+                "Greater",
+                [name(f"{tag}_first"), threshold],
+                [name(f"{tag}_gt")],
+                name=name(f"{tag}_Greater"),
+            ),
+            helper.make_node(
+                "Cast",
+                [name(f"{tag}_gt")],
+                [name(f"{tag}_zero_nd")],
+                to=onnx.TensorProto.INT64,
+                name=name(f"{tag}_Cast"),
+            ),
+            helper.make_node(
+                "Reshape",
+                [name(f"{tag}_zero_nd"), one],
+                [name(f"{tag}_zero")],
+                name=name(f"{tag}_Zero"),
+            ),
+        ] + reshape
+
+    for k, tensor in enumerate(entries):
+        new_nodes += hide_shape(tensor, f"in{k}")
+        rewires.append((tensor, name(f"in{k}_out"), cpu_names))
+
+    for k, tensor in enumerate(exits):
+        tag = f"out{k}"
+        new_nodes.append(
+            helper.make_node(
+                "Reshape",
+                [tensor, const(f"{tag}_shape", shapes[tensor])],
+                [name(f"{tag}_out")],
+                name=name(f"{tag}_Reshape"),
+            )
+        )
+        quantize_nodes = {
+            c.name for c in consumers[tensor] if c.op_type == "QuantizeLinear"
+        }
+        rewires.append((tensor, name(f"{tag}_out"), quantize_nodes))
+
+    def apply(new_nodes, rewires):
+        for old, new, targets in rewires:
+            for node in graph.node:
+                if node.name in targets:
+                    for i, input_name in enumerate(node.input):
+                        if input_name == old:
+                            node.input[i] = new
+        graph.node.extend(new_nodes)
+        sort_nodes_topologically(model)
+        del graph.value_info[:]
+
+    apply(new_nodes, rewires)
+
+    # Inside a CPU part, shapes can become static again, e.g. after a Reshape to a constant
+    # shape or when broadcasting with a constant. Hide those too, until none are left.
+    for round_ in range(100):
+        inferred = shape_inference.infer_shapes(model)
+        infos = list(inferred.graph.value_info) + list(inferred.graph.input)
+        shapes = {
+            vi.name: [d.dim_value for d in vi.type.tensor_type.shape.dim]
+            for vi in infos
+        }
+        floats = {
+            vi.name
+            for vi in infos
+            if vi.type.tensor_type.elem_type == onnx.TensorProto.FLOAT
+        }
+        consumers = defaultdict(list)
+        for node in graph.node:
+            for input_name in node.input:
+                consumers[input_name].append(node)
+
+        def cpu_targets(tensor):
+            """CPU consumers of tensor, and QuantizeLinear nodes that only lead to CPU nodes."""
+            return {
+                c.name
+                for c in consumers[tensor]
+                if c.name in cpu_names
+                or (
+                    c.op_type == "QuantizeLinear"
+                    and downstream(c)
+                    and all(d.name in cpu_names for d in downstream(c))
+                )
+            }
+
+        static = [
+            o
+            for node in graph.node
+            if node.name in cpu_names
+            for o in node.output
+            if o in floats
+            and o not in graph_outputs
+            and len(shapes[o]) > 0
+            and is_static(o)
+            and cpu_targets(o)
+        ]
+        if not static:
+            break
+        producer = {o: n for n in graph.node for o in n.output}
+        entry_zeros = {
+            name(f"in{k}_out"): name(f"in{k}_zero") for k in range(len(entries))
+        }
+
+        def upstream_zero(tensor):
+            """The zero of an entry that tensor is computed from, if any."""
+            seen, stack = set(), [tensor]
+            while stack:
+                t = stack.pop()
+                if t in entry_zeros:
+                    return entry_zeros[t]
+                if t in seen or t not in producer:
+                    continue
+                seen.add(t)
+                stack.extend(producer[t].input)
+            return None
+
+        def constant_values(tensor):
+            if tensor in initializers:
+                return numpy_helper.to_array(initializers[tensor])
+            node = producer.get(tensor)
+            if node is not None and node.op_type == "Constant":
+                return numpy_helper.to_array(node.attribute[0].t)
+            return None
+
+        new_nodes, rewires = [], []
+        for k, tensor in enumerate(static):
+            tag = f"cpu{round_}_{k}"
+            zero = upstream_zero(tensor)
+            targets = [n for n in graph.node if n.name in cpu_targets(tensor)]
+            if (
+                zero
+                and targets
+                and all(
+                    n.op_type == "Reshape"
+                    and n.input[0] == tensor
+                    and constant_values(n.input[1]) is not None
+                    for n in targets
+                )
+            ):
+                # A Reshape directly after the hiding Reshape would be merged with it by
+                # graph optimizers, so the target shape of the existing Reshape is made
+                # data-dependent instead.
+                for j, reshape in enumerate(targets):
+                    shape = const(f"{tag}_{j}_shape", constant_values(reshape.input[1]))
+                    new_nodes.append(
+                        helper.make_node(
+                            "Add",
+                            [shape, zero],
+                            [name(f"{tag}_{j}_shape_dyn")],
+                            name=name(f"{tag}_{j}_AddShape"),
+                        )
+                    )
+                    reshape.input[1] = name(f"{tag}_{j}_shape_dyn")
+                continue
+            new_nodes += hide_shape(tensor, tag, zero)
+            rewires.append((tensor, name(f"{tag}_out"), cpu_targets(tensor)))
+        apply(new_nodes, rewires)
+
+    return shape_inference.infer_shapes(model)
+
+
+def cap_channel_imbalance(
+    model: onnx.ModelProto, max_ratio: float = 3.0, compensate: bool = False
+):
+    """Caps the per-output-channel imbalance of every BN-folded conv, in place.
+
+    Weights are quantized per tensor, so one large channel coarsens the scale of all.
+
+    Args:
+        model: Loaded float32 ONNX model, modified in place.
+        max_ratio: Bound on max(channel absmax) / median(channel absmax), >= 1.
+        compensate: Undo the scaling in the following convs where the graph allows it;
+            otherwise the model's outputs change.
+
+    Returns:
+        ``(tensors_changed, channels_rescaled)``.
+    """
+    by_name = {init.name: init for init in model.graph.initializer}
+    consumers = {}
+    for node in model.graph.node:
+        for name in node.input:
+            consumers.setdefault(name, []).append(node)
+    convs_by_weight = {
+        node.input[1]: node for node in model.graph.node if node.op_type == "Conv"
+    }
+
+    def compensation_targets(weight_name):
+        conv = convs_by_weight.get(weight_name)
+        if conv is None:
+            return []
+        users = consumers.get(conv.output[0], [])
+        if len(users) != 1 or users[0].op_type != "Relu":
+            return []
+        targets = consumers.get(users[0].output[0], [])
+        regular = all(
+            t.op_type == "Conv"
+            and t.input[0] == users[0].output[0]
+            and t.input[1] in by_name
+            and next((a.i for a in t.attribute if a.name == "group"), 1) == 1
+            for t in targets
+        )
+        return targets if targets and regular else []
+
+    tensors_seen, tensors_changed, channels_rescaled = 0, 0, 0
+
+    # in node order, so a conv's own cap sees the compensation from its predecessor
+    weight_names = [
+        node.input[1] for node in model.graph.node if node.op_type == "Conv"
+    ]
+    for weight_name in weight_names:
+        weight_init = by_name.get(weight_name)
+        bias_init = by_name.get(weight_name + "_bias")
+        if (
+            weight_init is None
+            or not weight_name.endswith(".conv.weight")
+            or bias_init is None
+        ):
+            continue
+        weights = numpy_helper.to_array(weight_init)
+        if weights.dtype != np.float32 or weights.ndim != 4:
+            continue
+        tensors_seen += 1
+
+        absmax = np.abs(weights).max(axis=(1, 2, 3))
+        bound = float(np.median(absmax)) * max_ratio
+        if bound <= 0 or absmax.max() <= bound:
+            continue
+
+        excess = np.maximum(absmax / bound, 1.0).astype(np.float32)
+        weight_init.CopyFrom(
+            numpy_helper.from_array(
+                (weights / excess[:, None, None, None]).astype(np.float32),
+                weight_init.name,
+            )
+        )
+        bias_init.CopyFrom(
+            numpy_helper.from_array(
+                (numpy_helper.to_array(bias_init) / excess).astype(np.float32),
+                bias_init.name,
+            )
+        )
+        if compensate:
+            for target in compensation_targets(weight_name):
+                target_init = by_name[target.input[1]]
+                target_weights = numpy_helper.to_array(target_init)
+                target_init.CopyFrom(
+                    numpy_helper.from_array(
+                        (target_weights * excess[None, :, None, None]).astype(
+                            np.float32
+                        ),
+                        target_init.name,
+                    )
+                )
+        tensors_changed += 1
+        channels_rescaled += int((excess > 1.0).sum())
+
+    if not tensors_seen:
+        # Expected for models without mmcv ConvModule layers (e.g. a torchvision ResNet
+        # backbone) and for untrained models, whose all-zero folded biases the exporter
+        # drops. Otherwise it means the exporter's naming has changed.
+        logger.warning(
+            "cap_channel_imbalance found no BN-folded ConvModule conv (*.conv.weight with a "
+            "*.conv.weight_bias) to check"
+        )
+    return tensors_changed, channels_rescaled
+
+
+def find_final_convs(onnx_model_path):
+    """Names of the last Conv nodes of a model, i.e. Convs with no other Conv downstream.
+
+    Args:
+        onnx_model_path: Path to the float32 ONNX model.
+
+    Returns:
+        List of node names to pass to quantize_static(nodes_to_exclude=...).
+    """
+    nodes = list(onnx.load(str(onnx_model_path)).graph.node)
+    consumers = defaultdict(list)
+    for k, node in enumerate(nodes):
+        for input_name in node.input:
+            consumers[input_name].append(k)
+
+    # ONNX nodes are topologically sorted, so consumers are visited before producers.
+    reaches_conv = [False] * len(nodes)
+    for k in reversed(range(len(nodes))):
+        reaches_conv[k] = any(
+            nodes[c].op_type == "Conv" or reaches_conv[c]
+            for output_name in nodes[k].output
+            for c in consumers[output_name]
+        )
+
+    return [
+        n.name
+        for k, n in enumerate(nodes)
+        if n.op_type == "Conv" and not reaches_conv[k]
+    ]
