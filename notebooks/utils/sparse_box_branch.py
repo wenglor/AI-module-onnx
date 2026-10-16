@@ -248,6 +248,7 @@ def compute_box_branch_at_kept_candidates(
         ).T
         b2 = np.concatenate([weight(lv["reg"].input[2]), weight(lv["ang"].input[2])])
         n_dist = weight(lv["reg"].input[1]).shape[0]
+        n_ang = weight(lv["ang"].input[1]).shape[0]  # the angle coder's encode_size
 
         mask = node(
             "Equal",
@@ -296,7 +297,7 @@ def compute_box_branch_at_kept_candidates(
             [
                 o,
                 const(f"s1_{lvl}", np.array([n_dist])),
-                const(f"e1_{lvl}", np.array([n_dist + 1])),
+                const(f"e1_{lvl}", np.array([n_dist + n_ang])),
                 const(f"b_{lvl}", np.array([1])),
             ],
             f"angle{lvl}",

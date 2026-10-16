@@ -32,6 +32,7 @@ To ensure optimal and stable operation, verify that your installed component ver
 │   ├── utils                                          # Folder containing utility scripts
 │   ├── object-detection-export-example.ipynb          # End-to-end object detection example notebook
 │   ├── rotated-object-detection-export-example.ipynb  # End-to-end rotated object detection example notebook
+│   ├── rotated-360-object-detection-export-example.ipynb  # Rotated object detection with the heading (360°)
 │   ├── multi-class-export-example.ipynb               # End-to-end multi-class example notebook
 │   └── multi-label-export-example.ipynb               # End-to-end multi-label example notebook
 ├── Dockerfile                                         # Docker configuration
@@ -115,6 +116,12 @@ We use docker engine within a WSL2 environment on Windows. We also tested this w
    - Each detection includes a class label, a confidence score, and a rotated bounding box (center, size and angle)
    - Use it when objects are elongated or tilted, where an axis-aligned box would cover a lot of background or overlap neighbouring objects
    - The angle describes the orientation of the box, not the direction the object is facing (a box rotated by 180° is the same box)
+
+### Rotated Object-detection with heading (360°)
+   Same as rotated object detection, but the angle also tells which end of the object is its front, over the full 360° (`rotated-360-object-detection-export-example.ipynb`).
+   - The angle is the heading: in [-180°, 180°), clockwise, 0° when the front points right
+   - Use it when the direction matters, e.g. to pick a part tip first or to check that parts lie the right way round
+   - The annotations must carry the heading: in CVAT, draw the rotated rectangle with the object's front at its right edge, then rotate it
 
 ## Troubleshooting
 
