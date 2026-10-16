@@ -20,3 +20,6 @@ data/coco-annotations/*/images/*
 data/mmdetection
 data/mmrotate
 data/work_dirs
+data/cvat
+
+docs/
