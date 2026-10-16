@@ -764,3 +764,66 @@ def find_final_convs(onnx_model_path):
         for k, n in enumerate(nodes)
         if n.op_type == "Conv" and not reaches_conv[k]
     ]
+
+
+def find_input_convs(onnx_model_path):
+    """Names of the Conv nodes that read a graph input, plus a ReLU directly after each.
+
+    The first convolution sees the image itself, and a per-tensor INT8 version of it can cost a
+    lot of accuracy for some trained models. Pass the result to quantize_static(nodes_to_exclude=...)
+    to keep it in float32; keep_fp32_nodes_on_cpu then runs it on the CPU.
+
+    Args:
+        onnx_model_path: Path to the float32 ONNX model.
+
+    Returns:
+        List of node names to pass to quantize_static(nodes_to_exclude=...).
+    """
+    graph = onnx.load(str(onnx_model_path)).graph
+    graph_inputs = {i.name for i in graph.input} - {i.name for i in graph.initializer}
+    consumers = defaultdict(list)
+    for node in graph.node:
+        for input_name in node.input:
+            consumers[input_name].append(node)
+
+    names = []
+    for node in graph.node:
+        if node.op_type == "Conv" and node.input[0] in graph_inputs:
+            names.append(node.name)
+            following = consumers[node.output[0]]
+            if len(following) == 1 and following[0].op_type == "Relu":
+                names.append(following[0].name)
+    return names
+
+
+def find_score_path_nodes(onnx_model_path, class_convs):
+    """Names of the nodes between the given class prediction convs and the score Sigmoid.
+
+    Quantizing the class logits gains nothing when the class convs and the post-processing
+    both stay in float32, and the calibrated range can clip them. Pass the result to
+    quantize_static(nodes_to_exclude=...), together with the class convs themselves.
+
+    Args:
+        onnx_model_path: Path to the float32 ONNX model.
+        class_convs: Names of the final class prediction Conv nodes only; other convs (e.g. the
+            box branch) would pull in the box decoding and NMS.
+
+    Returns:
+        Node names from the outputs of ``class_convs`` up to and including the first Sigmoid
+        on each path.
+    """
+    nodes = list(onnx.load(str(onnx_model_path)).graph.node)
+    consumers = defaultdict(list)
+    for node in nodes:
+        for input_name in node.input:
+            consumers[input_name].append(node)
+
+    names, queue = [], [o for n in nodes if n.name in set(class_convs) for o in n.output]
+    while queue:
+        for node in consumers[queue.pop()]:
+            if node.name in names:
+                continue
+            names.append(node.name)
+            if node.op_type != "Sigmoid":
+                queue.extend(node.output)
+    return names

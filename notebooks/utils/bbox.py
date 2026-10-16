@@ -221,6 +221,9 @@ def draw_rotated_boxes(
 
     for box, label, score in zip(boxes_xywhr, labels, scores):
         x, y, w, h, angle_deg = box
+        # a degenerate prediction (far outside the image) can't be drawn with int32 points
+        if not np.isfinite(box).all() or np.abs(box[:4]).max() > 1e6:
+            continue
         cx, cy = x + w / 2, y + h / 2
         hw, hh = w / 2, h / 2
         cos_a = math.cos(math.radians(angle_deg))
